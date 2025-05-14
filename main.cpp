@@ -32,6 +32,28 @@ struct Flow {
     Mac targetMac;
 };
 
+IP myIp(const char* dev) {
+    struct ifreq ifr;
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if(sock < 0){
+        perror("socket");
+        exit(1);
+    }
+    std::memset(&ifr, 0, sizeof(ifr));
+    std::strncpy(ifr.ifr_name, dev, IFNAMSIZ-1);
+    ifr.ifr_addr.sa_family = AF_INET;
+
+    if (ioctl(sock, SIOCGIFADDR, &ifr) < 0) {
+        perror("ioctl(SIOCGIFADDR)");
+        close(sock);
+        exit(1);
+    }
+    close(sock);
+
+    auto* sin = reinterpret_cast<struct sockaddr_in*>(&ifr.ifr_addr);
+    myIp = IP(ntohl(sin->sin_addr.s_addr));
+}
+
 Mac getMyMac(const char* dev) {
     struct ifreq ifr;
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -45,7 +67,7 @@ Mac getMyMac(const char* dev) {
     return Mac((uint8_t*)ifr.ifr_hwaddr.sa_data);
 }
 
-Mac getMacByArp(pcap_t* handle, Mac myMac, Ip ip) {
+Mac getMacByArp(pcap_t* handle, Mac myMac,IP myIp, Ip ip) {
     EthArpPacket packet;
     packet.eth_.dmac_ = Mac::broadcastMac();
     packet.eth_.smac_ = myMac;
@@ -57,7 +79,7 @@ Mac getMacByArp(pcap_t* handle, Mac myMac, Ip ip) {
     packet.arp_.pln_ = Ip::Size;
     packet.arp_.op_  = htons(ArpHdr::Request);
     packet.arp_.smac_ = myMac;
-    packet.arp_.sip_ = htonl(Ip("192.168.217.141"));
+    packet.arp_.sip_ = htonl(Ip(myIp.toHostOrder()));
     packet.arp_.tmac_ = Mac::nullMac();
     packet.arp_.tip_ = htonl(ip);
 
@@ -169,7 +191,7 @@ int main(int argc, char* argv[]) {
         f.targetIp = Ip(argv[i + 1]);
 
         if (arpTable.find(f.senderIp) == arpTable.end())
-            arpTable[f.senderIp] = getMacByArp(handle, myMac, f.senderIp);
+            arpTable[f.senderIp] = getMacByArp(handle, myMac, myIp, f.senderIp);
         if (arpTable.find(f.targetIp) == arpTable.end())
             arpTable[f.targetIp] = getMacByArp(handle, myMac, f.targetIp);
 
