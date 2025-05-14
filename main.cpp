@@ -32,10 +32,10 @@ struct Flow {
     Mac targetMac;
 };
 
-IP myIp(const char* dev) {
+Ip getMyIp(const char* dev) {
     struct ifreq ifr;
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if(sock < 0){
+    if (sock < 0) {
         perror("socket");
         exit(1);
     }
@@ -51,7 +51,7 @@ IP myIp(const char* dev) {
     close(sock);
 
     auto* sin = reinterpret_cast<struct sockaddr_in*>(&ifr.ifr_addr);
-    myIp = IP(ntohl(sin->sin_addr.s_addr));
+    return Ip(ntohl(sin->sin_addr.s_addr));
 }
 
 Mac getMyMac(const char* dev) {
@@ -182,22 +182,24 @@ int main(int argc, char* argv[]) {
     }
     printf("[*] Attacker MAC: %s\n", std::string(myMac).c_str());
 
+		Ip myIp = getMyIp(dev);
+		    printf("[*] Attacker IP: %s\n", myIp.toString().c_str());
+
     std::map<Ip, Mac> arpTable;
     std::vector<Flow> flows;
 
-    for (int i = 2; i < argc; i += 2) {
+        for (int i = 2; i < argc; i += 2) {
         Flow f;
         f.senderIp = Ip(argv[i]);
-        f.targetIp = Ip(argv[i + 1]);
+        f.targetIp = Ip(argv[i+1]);
 
-        if (arpTable.find(f.senderIp) == arpTable.end())
-            arpTable[f.senderIp] = getMacByArp(handle, myMac, myIp, f.senderIp);
-        if (arpTable.find(f.targetIp) == arpTable.end())
-            arpTable[f.targetIp] = getMacByArp(handle, myMac, f.targetIp);
+-       arpTable[f.senderIp] = getMacByArp(handle, myMac, f.senderIp);
++       arpTable[f.senderIp] = getMacByArp(handle, myMac, myIp, f.senderIp);
+-       arpTable[f.targetIp] = getMacByArp(handle, myMac, f.targetIp);
++       arpTable[f.targetIp] = getMacByArp(handle, myMac, myIp, f.targetIp);
 
         f.senderMac = arpTable[f.senderIp];
         f.targetMac = arpTable[f.targetIp];
-
         flows.push_back(f);
     }
 
