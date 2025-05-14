@@ -67,7 +67,7 @@ Mac getMyMac(const char* dev) {
     return Mac((uint8_t*)ifr.ifr_hwaddr.sa_data);
 }
 
-Mac getMacByArp(pcap_t* handle, Mac myMac,IP myIp, Ip ip) {
+Mac getMacByArp(pcap_t* handle, Mac myMac, Ip myIp, Ip ip) {
     EthArpPacket packet;
     packet.eth_.dmac_ = Mac::broadcastMac();
     packet.eth_.smac_ = myMac;
@@ -79,7 +79,7 @@ Mac getMacByArp(pcap_t* handle, Mac myMac,IP myIp, Ip ip) {
     packet.arp_.pln_ = Ip::Size;
     packet.arp_.op_  = htons(ArpHdr::Request);
     packet.arp_.smac_ = myMac;
-    packet.arp_.sip_ = htonl(Ip(myIp.toHostOrder()));
+    packet.arp_.sip_ = htonl(myIp.toHostOrder());
     packet.arp_.tmac_ = Mac::nullMac();
     packet.arp_.tip_ = htonl(ip);
 
@@ -188,20 +188,16 @@ int main(int argc, char* argv[]) {
     std::map<Ip, Mac> arpTable;
     std::vector<Flow> flows;
 
-        for (int i = 2; i < argc; i += 2) {
-        Flow f;
-        f.senderIp = Ip(argv[i]);
-        f.targetIp = Ip(argv[i+1]);
-
--       arpTable[f.senderIp] = getMacByArp(handle, myMac, f.senderIp);
-+       arpTable[f.senderIp] = getMacByArp(handle, myMac, myIp, f.senderIp);
--       arpTable[f.targetIp] = getMacByArp(handle, myMac, f.targetIp);
-+       arpTable[f.targetIp] = getMacByArp(handle, myMac, myIp, f.targetIp);
-
-        f.senderMac = arpTable[f.senderIp];
-        f.targetMac = arpTable[f.targetIp];
-        flows.push_back(f);
-    }
+		for (int i = 2; i < argc; i += 2) {
+		    Flow f{ Ip(argv[i]), {}, Ip(argv[i+1]), {} };
+		    if (!arpTable.count(f.senderIp))
+		        arpTable[f.senderIp] = getMacByArp(handle, myMac, myIp, f.senderIp);
+		    if (!arpTable.count(f.targetIp))
+		        arpTable[f.targetIp] = getMacByArp(handle, myMac, myIp, f.targetIp);
+		    f.senderMac = arpTable[f.senderIp];
+		    f.targetMac = arpTable[f.targetIp];
+		    flows.push_back(f);
+}
 
     for (const auto& f : flows) {
         printf("[+] Infecting %s (MAC: %s) to redirect to %s\n",
